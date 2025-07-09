@@ -69,7 +69,7 @@ if __name__ == '__main__':
     ap.add_argument("--d_ff", default=1344, type=int)
     ap.add_argument("--num_layers", default=4, type=int)
     ap.add_argument("--num_heads", default=16, type=int)
-    ap.add_argument("--forward_only", default=False, type=bool)
+    ap.add_argument('--forward_only', action='store_true', default=False)
 
     args = ap.parse_args()
 
