@@ -41,7 +41,7 @@ def run_transformer(
                 y.backward()
     return run
 
-def benchmark(description: str, run: Callable, num_warmups: int = 1, num_trials: int = 3):
+def benchmark(description: str, run: Callable, num_warmups: int = 5, num_trials: int = 3):
     """Benchmark `func` by running it `num_trials`, and return all the times."""
     # Warmup: first times might be slower due to compilation, things not cached.
     # Since we will run the kernel multiple times, the timing that matters is steady state.
