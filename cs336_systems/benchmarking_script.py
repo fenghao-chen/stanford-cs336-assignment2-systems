@@ -1,5 +1,6 @@
 import math
 import time
+from contextlib import nullcontext
 from typing import Callable
 
 from cs336_basics.model import BasicsTransformerLM
@@ -18,7 +19,6 @@ def get_device() -> torch.device:
         device =  torch.device("mps")
     else:
         device = torch.device("cpu")
-    print(f"using device: {device}")
     return device
 
 def run_transformer(
@@ -29,10 +29,12 @@ def run_transformer(
         num_heads: int,
         d_ff: int,
         rope_theta: int,
-        input: Tensor, num_steps: int, forward_only: bool = False) -> Callable:
+        input: Tensor, num_steps: int, forward_only: bool = False, mixed_precision: bool = False) -> Callable:
 
     # Define a model (with random weights)
     model = BasicsTransformerLM(vocab_size=vocab_size, context_length=context_length, d_model=d_model, num_layers=num_layers, num_heads=num_heads, d_ff=d_ff, rope_theta=rope_theta).to(get_device())
+    input = input.to(get_device())
+    dtype = torch.bfloat16
 
     optimizer = AdamW(
         model.parameters(),
@@ -42,11 +44,17 @@ def run_transformer(
         eps=1e-8,
     )
 
+    if mixed_precision:
+        context_manager = torch.autocast(device_type=get_device().type, dtype=dtype)  # real work
+    else:
+        context_manager = nullcontext()
+
     def run():
         # Run the model `num_steps` times (note: no optimizer updates)
         for step in range(num_steps):
-            # Forward
-            y = model(input).mean()
+            with context_manager:
+                # Forward
+                y = model(input).mean()
             # Backward
             if not forward_only:
                 y.backward()
@@ -82,6 +90,7 @@ if __name__ == '__main__':
     ap.add_argument("--num_layers", default=4, type=int)
     ap.add_argument("--num_heads", default=16, type=int)
     ap.add_argument('--forward_only', action='store_true', default=False)
+    ap.add_argument('--mixed_precision', action='store_true', default=False)
 
     args = ap.parse_args()
 
@@ -95,10 +104,20 @@ if __name__ == '__main__':
     d_ff = args.d_ff
     num_layers = args.num_layers
     forward_only = args.forward_only
+    mixed_precision = args.mixed_precision
 
     input = torch.randint(0, vocab_size, (batch_size, context_length))
-
-    print(f"benchmarking using the following hyperparameters: context_length: {context_length}, d_model: {d_model}, d_ff: {d_ff}, num_heads: {num_heads}, num_layers: {num_layers}, forward_only: {forward_only}")
+    print(f"using device: {get_device()}")
+    print(f"benchmarking using the following hyperparameters: context_length: {context_length}, d_model: {d_model}, d_ff: {d_ff}, num_heads: {num_heads}, num_layers: {num_layers}, forward_only: {forward_only}, mixed_precision: {mixed_precision}")
     mean, std = benchmark("run_transformer",
-              run_transformer(vocab_size=vocab_size, context_length=context_length, d_model=d_model, num_heads=num_heads, num_layers=num_layers, rope_theta=rope_theta, d_ff=d_ff, input=input, num_steps=num_steps, forward_only=forward_only))
+              run_transformer(vocab_size=vocab_size,
+                              context_length=context_length,
+                              d_model=d_model,
+                              num_heads=num_heads,
+                              num_layers=num_layers,
+                              rope_theta=rope_theta,
+                              d_ff=d_ff, input=input,
+                              num_steps=num_steps,
+                              forward_only=forward_only,
+                              mixed_precision=mixed_precision))
     print(f"result: average {mean} millisecond, standard deviation {std}")
