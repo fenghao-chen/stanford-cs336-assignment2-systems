@@ -15,7 +15,6 @@ from jaxtyping import Float, Bool, Int
 
 
 from .nn_utils import softmax
-import torch.cuda.nvtx as nvtx
 
 logger = logging.getLogger(__name__)
 
@@ -423,17 +422,14 @@ def scaled_dot_product_attention(
     """
 
     d_k = K.shape[-1]
-    with nvtx.range("computing attention scores"):
-        attention_scores = einsum(Q, K, "... query d_k, ... key d_k -> ... query key") / math.sqrt(d_k)
+    attention_scores = einsum(Q, K, "... query d_k, ... key d_k -> ... query key") / math.sqrt(d_k)
 
     if mask is not None:
         attention_scores = torch.where(mask, attention_scores, float("-inf"))
 
-    with nvtx.range("computing softmax"):
-        attention_weights = softmax(attention_scores, dim=-1)  # Softmax over the key dimension
+    attention_weights = softmax(attention_scores, dim=-1)  # Softmax over the key dimension
 
-    with nvtx.range("final matmul"):
-        return einsum(attention_weights, V, "... query key, ... key d_v ->  ... query d_v")
+    return einsum(attention_weights, V, "... query key, ... key d_v ->  ... query d_v")
 
 
 class CausalMultiHeadSelfAttention(nn.Module):
@@ -491,10 +487,9 @@ class CausalMultiHeadSelfAttention(nn.Module):
         *b, sequence_length, d_model = x.size()
         assert d_model == self.d_model
 
-        with nvtx.range("qkv projections"):
-            Q = self.q_proj(x)
-            K = self.k_proj(x)
-            V = self.v_proj(x)
+        Q = self.q_proj(x)
+        K = self.k_proj(x)
+        V = self.v_proj(x)
 
         # Take apart each head from the embedding dimension of Q, K, V to shape (..., num_heads, seq_len, d_k).
         Q, K, V = (
@@ -525,8 +520,7 @@ class CausalMultiHeadSelfAttention(nn.Module):
         attn_output = rearrange(attn_output, "batch heads seq d_v -> batch seq (heads d_v)").contiguous()
 
         # Apply the output projection
-        with nvtx.range("output projection"):
-            output = self.output_proj(attn_output)
+        output = self.output_proj(attn_output)
         return output
 
 def silu(x: torch.Tensor):
