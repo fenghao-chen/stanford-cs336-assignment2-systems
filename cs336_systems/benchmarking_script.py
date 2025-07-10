@@ -8,6 +8,8 @@ import numpy as np
 from torch import Tensor
 import argparse
 
+from torch.optim import AdamW
+
 
 def get_device() -> torch.device:
     if torch.cuda.is_available():
@@ -31,6 +33,15 @@ def run_transformer(
 
     # Define a model (with random weights)
     model = BasicsTransformerLM(vocab_size=vocab_size, context_length=context_length, d_model=d_model, num_layers=num_layers, num_heads=num_heads, d_ff=d_ff, rope_theta=rope_theta).to(get_device())
+
+    optimizer = AdamW(
+        model.parameters(),
+        lr=1e-3,
+        weight_decay=0.01,
+        betas=(0.9, 0.98),
+        eps=1e-8,
+    )
+
     def run():
         # Run the model `num_steps` times (note: no optimizer updates)
         for step in range(num_steps):
@@ -42,6 +53,8 @@ def run_transformer(
             if not forward_only:
                 with torch.cuda.nvtx.range("backward"):
                     y.backward()
+                with torch.cuda.nvtx.range("optimization"):
+                    optimizer.step()
             torch.cuda.nvtx.range_pop()
     return run
 
