@@ -45,17 +45,12 @@ def run_transformer(
     def run():
         # Run the model `num_steps` times (note: no optimizer updates)
         for step in range(num_steps):
-            torch.cuda.nvtx.range_push(f"step_{step}")
-            with torch.cuda.nvtx.range("forward"):
-                # Forward
-                y = model(input).mean()
+            # Forward
+            y = model(input).mean()
             # Backward
             if not forward_only:
-                with torch.cuda.nvtx.range("backward"):
-                    y.backward()
-                with torch.cuda.nvtx.range("optimization"):
-                    optimizer.step()
-            torch.cuda.nvtx.range_pop()
+                y.backward()
+                optimizer.step()
     return run
 
 def benchmark(description: str, run: Callable, num_warmups: int = 5, num_trials: int = 3):
