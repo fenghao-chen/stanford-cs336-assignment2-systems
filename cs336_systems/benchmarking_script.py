@@ -70,6 +70,7 @@ def benchmark(description: str, run: Callable, num_warmups: int = 5, num_trials:
     if torch.cuda.is_available():
         torch.cuda.synchronize()  # Wait for CUDA threads to finish (important!)
     # Time it for real now!
+    torch.cuda.memory._record_memory_history(max_entries=1000000)
     times: list[float] = [] # @inspect times, @inspect description
     for trial in range(num_trials):  # Do it multiple times to capture variance
         start_time = time.time()
@@ -80,6 +81,8 @@ def benchmark(description: str, run: Callable, num_warmups: int = 5, num_trials:
         times.append((end_time - start_time) * 1000) # @inspect times
     mean_time = np.mean(times) # @inspect mean_time
     std_time = np.std(times)
+    torch.cuda.memory._dump_snapshot("memory_snapshot.pickle")
+    torch.cuda.memory._record_memory_history(enabled=None)
     return mean_time, std_time
 
 def wrapper(context_length: int = 256,
