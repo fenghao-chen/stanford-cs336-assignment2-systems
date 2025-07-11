@@ -82,29 +82,17 @@ def benchmark(description: str, run: Callable, num_warmups: int = 5, num_trials:
     std_time = np.std(times)
     return mean_time, std_time
 
-if __name__ == '__main__':
-    ap = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    ap.add_argument("--context_length", default=256, type=int)
-    ap.add_argument("--d_model", default=512, type=int)
-    ap.add_argument("--d_ff", default=1344, type=int)
-    ap.add_argument("--num_layers", default=4, type=int)
-    ap.add_argument("--num_heads", default=16, type=int)
-    ap.add_argument('--forward_only', action='store_true', default=False)
-    ap.add_argument('--mixed_precision', action='store_true', default=False)
-
-    args = ap.parse_args()
-
+def wrapper(context_length: int = 256,
+            d_model: int = 512,
+            d_ff: int = 1344,
+            num_layers: int = 4,
+            num_heads: int = 16,
+            forward_only: bool = False,
+            mixed_precision: bool = False) -> None:
     batch_size = 4
     vocab_size = 10000
     rope_theta = 10000
     num_steps = 10
-    context_length = args.context_length
-    d_model = args.d_model
-    num_heads = args.num_heads
-    d_ff = args.d_ff
-    num_layers = args.num_layers
-    forward_only = args.forward_only
-    mixed_precision = args.mixed_precision
 
     input = torch.randint(0, vocab_size, (batch_size, context_length))
     print(f"using device: {get_device()}")
@@ -121,3 +109,17 @@ if __name__ == '__main__':
                               forward_only=forward_only,
                               mixed_precision=mixed_precision))
     print(f"result: average {mean} millisecond, standard deviation {std}")
+
+
+if __name__ == '__main__':
+    ap = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    ap.add_argument("--context_length", default=256, type=int)
+    ap.add_argument("--d_model", default=512, type=int)
+    ap.add_argument("--d_ff", default=1344, type=int)
+    ap.add_argument("--num_layers", default=4, type=int)
+    ap.add_argument("--num_heads", default=16, type=int)
+    ap.add_argument('--forward_only', action='store_true', default=False)
+    ap.add_argument('--mixed_precision', action='store_true', default=False)
+
+    args = ap.parse_args()
+    wrapper(context_length=args.context_length, d_model=args.d_model, d_ff=args.d_ff, num_layers=args.num_layers, num_heads=args.num_heads, forward_only=args.forward_only, mixed_precision=args.mixed_precision)
