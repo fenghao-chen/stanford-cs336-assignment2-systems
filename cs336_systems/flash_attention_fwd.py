@@ -20,6 +20,10 @@ def flash_fwd_kernel(
     query_tile_index = tl.program_id(0)
     batch_index = tl.program_id(1)
 
+    # Early return if out of bounds
+    if query_tile_index * Q_TILE_SIZE >= N_QUERIES:
+        return
+
     # Offset each pointer with the corresponding batch index
     # multiplied with the batch stride for each tensor
     Q_block_ptr = tl.make_block_ptr(
@@ -72,11 +76,12 @@ def flash_fwd_kernel(
     l = tl.zeros((Q_TILE_SIZE,), dtype=tl.float32)
     o = tl.zeros((Q_TILE_SIZE, D), dtype=tl.float32)
 
-    for j in range(tl.cdiv(N_KEYS, K_TILE_SIZE)):
+    num_k_tiles = tl.cdiv(N_KEYS, K_TILE_SIZE)
+    for j in range(num_k_tiles):
         k_j = tl.load(K_block_ptr, boundary_check=(0, 1), padding_option="zero")  # (tile_size, d_model)
         v_j = tl.load(V_block_ptr, boundary_check=(0, 1), padding_option="zero")  # (tile_size, d_model)
 
-        attn_scores = tl.dot(q_i, k_j.trans()) * scale
+        attn_scores = tl.dot(q_i, tl.trans(k_j)) * scale
         row_max = tl.max(attn_scores, axis=1)
         m_new = tl.maximum(m, row_max)
 
@@ -90,8 +95,9 @@ def flash_fwd_kernel(
 
         m = m_new
 
-        K_block_ptr = K_block_ptr.advance((K_TILE_SIZE, 0))  # Move by K_TILE_SIZE
-        V_block_ptr = V_block_ptr.advance((K_TILE_SIZE, 0))  # Move by K_TILE_SIZE
+        if j < num_k_tiles - 1:
+            K_block_ptr = K_block_ptr.advance((K_TILE_SIZE, 0))  # Move by K_TILE_SIZE
+            V_block_ptr = V_block_ptr.advance((K_TILE_SIZE, 0))  # Move by K_TILE_SIZE
 
     o_i = (o / l[:, None]).to(O_block_ptr.type.element_ty)
     l_i = (m + tl.log(l)).to(L_block_ptr.type.element_ty)
