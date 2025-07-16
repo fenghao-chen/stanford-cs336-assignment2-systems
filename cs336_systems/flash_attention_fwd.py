@@ -76,8 +76,9 @@ def flash_fwd_kernel(
         k_j = tl.load(K_block_ptr, boundary_check=(0, 1), padding_option="zero")  # (tile_size, d_model)
         v_j = tl.load(V_block_ptr, boundary_check=(0, 1), padding_option="zero")  # (tile_size, d_model)
 
-        attn_scores = tl.dot(q_i, k_j.trans(), acc=tl.float32) * scale
-        m_new = tl.maximum(m, attn_scores.max(axis=1), dtype=tl.float32)
+        attn_scores = tl.dot(q_i, k_j.trans()) * scale
+        row_max = attn_scores.max(axis=1)
+        m_new = tl.maximum(m, row_max, dtype=tl.float32)
 
         s = tl.exp(m - m_new)
         l = l * s
@@ -85,7 +86,7 @@ def flash_fwd_kernel(
 
         p_tilde = tl.exp(attn_scores - m_new[:, None]).to(v_j.dtype)
         l += p_tilde.sum(axis=1)
-        o += tl.dot(p_tilde, v_j, acc=tl.float32)
+        o += tl.dot(p_tilde, v_j)
 
         m = m_new
 
