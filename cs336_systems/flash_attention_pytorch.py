@@ -2,7 +2,7 @@ import torch
 from einops import rearrange, einsum
 import math
 
-class FlashForward(torch.autograd.Function):
+class FlashAttentionPyTorch(torch.autograd.Function):
     @staticmethod
     def forward(ctx, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, is_causal: bool = False) -> torch.Tensor:
         batch_size, n_q, d_model = q.shape
@@ -29,8 +29,7 @@ class FlashForward(torch.autograd.Function):
                 k_j = k[:, k_start : k_end, :] # (batch_size, tile_size, d_model)
                 v_j = v[:, k_start : k_end, :] # (batch_size, tile_size, d_model)
 
-                # attn_scores = einsum(q_i, k_j, '... queries d_k,  ... keys d_k -> ... queries keys') / math.sqrt(d_model)
-                attn_scores = torch.matmul(q_i, k_j.transpose(-2, -1)) / math.sqrt(d_model) # Use non einops for better translation to triton code
+                attn_scores = einsum(q_i, k_j, '... queries d_k,  ... keys d_k -> ... queries keys') / math.sqrt(d_model)
                 m_new = torch.maximum(m, attn_scores.max(dim=-1)[0])
 
                 scale = torch.exp(m - m_new)
