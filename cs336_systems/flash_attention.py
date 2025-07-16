@@ -20,7 +20,7 @@ class FlashAttention(torch.autograd.Function):
                          k.stride(0), k.stride(1), k.stride(2),
                          v.stride(0), v.stride(1), v.stride(2),
                          O.stride(0), O.stride(1), O.stride(2),
-                         L.stride(0), L.stride(1), L.stride(2),
+                         L.stride(0), L.stride(1),
                          N_QUERIES=n_q, N_KEYS=n_k,
                          scale=scale,
                          D=d_model,
