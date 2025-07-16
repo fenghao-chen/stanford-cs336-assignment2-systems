@@ -3,43 +3,39 @@ import triton.language as tl
 
 @triton.jit
 def flash_fwd_kernel(
-    Q_ptr, K_ptr, V_ptr,
-    O_ptr, L_ptr,
-    stride_qb, stride_qq, stride_qd,
-    stride_kb, stride_kk, stride_kd,
-    stride_vb, stride_vk, stride_vd,
-    stride_ob, stride_oq, stride_od,
-    stride_lb, stride_lq,
-    N_QUERIES, N_KEYS,
-    scale,
-    D: tl.constexpr,
-    Q_TILE_SIZE: tl.constexpr,
-    K_TILE_SIZE: tl.constexpr,
+        Q_ptr, K_ptr, V_ptr,
+        O_ptr, L_ptr,
+        stride_qb, stride_qq, stride_qd,
+        stride_kb, stride_kk, stride_kd,
+        stride_vb, stride_vk, stride_vd,
+        stride_ob, stride_oq, stride_od,
+        stride_lb, stride_lq,
+        N_QUERIES, N_KEYS,
+        scale,
+        D: tl.constexpr,
+        Q_TILE_SIZE: tl.constexpr,
+        K_TILE_SIZE: tl.constexpr,
 ):
     # Program indices
     query_tile_index = tl.program_id(0)
     batch_index = tl.program_id(1)
 
-    # Early return if out of bounds
-    if query_tile_index * Q_TILE_SIZE >= N_QUERIES:
-        return
-
     # Offset each pointer with the corresponding batch index
     # multiplied with the batch stride for each tensor
     Q_block_ptr = tl.make_block_ptr(
-      Q_ptr + batch_index * stride_qb,
-      shape=(N_QUERIES, D),
-      strides=(stride_qq, stride_qd),
-      offsets=(query_tile_index * Q_TILE_SIZE, 0),
-      block_shape=(Q_TILE_SIZE, D),
-      order=(1, 0),
+        Q_ptr + batch_index * stride_qb,
+        shape=(N_QUERIES, D),
+        strides=(stride_qq, stride_qd),
+        offsets=(query_tile_index * Q_TILE_SIZE, 0),
+        block_shape=(Q_TILE_SIZE, D),
+        order=(1, 0),
     )
 
     K_block_ptr = tl.make_block_ptr(
         K_ptr + batch_index * stride_kb,
         shape=(N_KEYS, D),
         strides=(stride_kk, stride_kd),
-        offsets=(0, 0), # TODO not sure
+        offsets=(0, 0),
         block_shape=(K_TILE_SIZE, D),
         order=(1, 0),
     )
@@ -48,7 +44,7 @@ def flash_fwd_kernel(
         V_ptr + batch_index * stride_vb,
         shape=(N_KEYS, D),
         strides=(stride_vk, stride_vd),
-        offsets=(0, 0), # TODO not sure
+        offsets=(0, 0),
         block_shape=(K_TILE_SIZE, D),
         order=(1, 0)
     )
@@ -57,16 +53,16 @@ def flash_fwd_kernel(
         O_ptr + batch_index * stride_ob,
         shape=(N_QUERIES, D),
         strides=(stride_oq, stride_od),
-        offsets=(query_tile_index * Q_TILE_SIZE, 0), # Should be the same as q
-        block_shape=(Q_TILE_SIZE, D), # Should be the same as q
+        offsets=(query_tile_index * Q_TILE_SIZE, 0),  # Should be the same as q
+        block_shape=(Q_TILE_SIZE, D),  # Should be the same as q
         order=(1, 0),
     )
 
     L_block_ptr = tl.make_block_ptr(
         L_ptr + batch_index * stride_lb,
-        shape=(N_QUERIES, ),
+        shape=(N_QUERIES,),
         strides=(stride_lq,),
-        offsets=(query_tile_index * Q_TILE_SIZE,), # TODO not sure
+        offsets=(query_tile_index * Q_TILE_SIZE,),
         block_shape=(Q_TILE_SIZE,),
         order=(0,),
     )
@@ -91,13 +87,12 @@ def flash_fwd_kernel(
 
         p_tilde = tl.exp(attn_scores - m_new[:, None]).to(v_j.dtype)
         l += tl.sum(p_tilde, axis=1)
-        o += tl.dot(p_tilde, v_j)
+        o = tl.dot(p_tilde, v_j, acc=o)
 
         m = m_new
 
-        if j < num_k_tiles - 1:
-            K_block_ptr = K_block_ptr.advance((K_TILE_SIZE, 0))  # Move by K_TILE_SIZE
-            V_block_ptr = V_block_ptr.advance((K_TILE_SIZE, 0))  # Move by K_TILE_SIZE
+        K_block_ptr = K_block_ptr.advance((K_TILE_SIZE, 0))  # Move by K_TILE_SIZE
+        V_block_ptr = V_block_ptr.advance((K_TILE_SIZE, 0))  # Move by K_TILE_SIZE
 
     o_i = (o / l[:, None]).to(O_block_ptr.type.element_ty)
     l_i = (m + tl.log(l)).to(L_block_ptr.type.element_ty)

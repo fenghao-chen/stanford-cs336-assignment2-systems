@@ -6,29 +6,34 @@ from cs336_systems.flash_attention_fwd import flash_fwd_kernel
 class FlashAttention(torch.autograd.Function):
     @staticmethod
     def forward(ctx, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, is_causal: bool = False) -> torch.Tensor:
-        batch_size, n_q, d_model = q.shape
-        _, n_k, _ = k.shape
-        b_q = b_k = 16 # tile sizes
-        t_q = math.ceil(n_q / b_q)
-        O = torch.zeros_like(q)
-        L = torch.full((batch_size, n_q), float('-inf'))
-        scale = 1 / math.sqrt(d_model)
+        # Make sure tensors are contiguous
+        q = q.contiguous()
+        k = k.contiguous()
+        v = v.contiguous()
 
-        flash_fwd_kernel[(t_q, batch_size)](q, k, v,
-                         O, L,
-                         q.stride(0), q.stride(1), q.stride(2),
-                         k.stride(0), k.stride(1), k.stride(2),
-                         v.stride(0), v.stride(1), v.stride(2),
-                         O.stride(0), O.stride(1), O.stride(2),
-                         L.stride(0), L.stride(1),
-                         N_QUERIES=n_q, N_KEYS=n_k,
-                         scale=scale,
-                         D=d_model,
-                         Q_TILE_SIZE=b_q,
-                         K_TILE_SIZE=b_k)
+        batch_size, seq_len, d_model = q.shape
 
-        ctx.save_for_backward(L)
-        return O
+        Q_TILE_SIZE = 16
+        K_TILE_SIZE = 16
+        grid = (math.ceil(seq_len / Q_TILE_SIZE), batch_size)
+
+        o_full = torch.zeros_like(q, dtype=torch.float32)
+        l_full = torch.full((batch_size, seq_len), float('-inf'), dtype=torch.float32, device='cuda')
+        scale = 1.0 / math.sqrt(d_model)
+
+        flash_fwd_kernel[grid](
+            q, k, v, o_full, l_full,
+            q.stride(0), q.stride(1), q.stride(2),
+            k.stride(0), k.stride(1), k.stride(2),
+            v.stride(0), v.stride(1), v.stride(2),
+            o_full.stride(0), o_full.stride(1), o_full.stride(2),
+            l_full.stride(0), l_full.stride(1),
+            seq_len, seq_len, scale,
+            d_model, Q_TILE_SIZE, K_TILE_SIZE
+        )
+
+        ctx.save_for_backward(l_full)
+        return o_full
 
     @staticmethod
     def backward(ctx, grad_out):
