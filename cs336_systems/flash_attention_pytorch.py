@@ -13,6 +13,8 @@ class FlashAttentionPyTorch(torch.autograd.Function):
         O = torch.zeros_like(q)
         L = torch.full((batch_size, n_q), float('-inf'))
 
+        mask = torch.tril(torch.ones(n_q, n_k)).bool()
+
         for i in range(t_q):
             q_start = i * b_q
             q_end = min(q_start + b_q, n_q)
@@ -30,6 +32,10 @@ class FlashAttentionPyTorch(torch.autograd.Function):
                 v_j = v[:, k_start : k_end, :] # (batch_size, tile_size, d_model)
 
                 attn_scores = einsum(q_i, k_j, '... queries d_k,  ... keys d_k -> ... queries keys') / math.sqrt(d_model)
+                if is_causal:
+                    mask_new = mask[q_start: q_end, k_start: k_end]
+                    attn_scores = attn_scores.masked_fill(~mask_new, -1e6)
+
                 m_new = torch.maximum(m, attn_scores.max(dim=-1)[0])
 
                 scale = torch.exp(m - m_new)
