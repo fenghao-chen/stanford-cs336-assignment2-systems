@@ -85,13 +85,13 @@ def flash_fwd_kernel(
             k_start = j * K_TILE_SIZE
             k_end = min(k_start + K_TILE_SIZE, N_KEYS)
 
-            ridx = tl.arange(0, q_end - q_start)
-            cidx = tl.arange(0, k_end - k_start)
+            ridx = tl.arange(0, Q_TILE_SIZE)
+            cidx = tl.arange(0, K_TILE_SIZE)
             row_ids = ridx + q_start
             col_ids = cidx + k_start
 
             mask = row_ids[:, None] >= col_ids[None, :]
-            zero_attn_scores = tl.full((q_end - q_start, k_end - k_start), -1e6, dtype=tl.float32)
+            zero_attn_scores = tl.full((Q_TILE_SIZE, K_TILE_SIZE), -1e6, dtype=tl.float32)
             attn_scores = tl.where(mask, attn_scores, zero_attn_scores)
 
         row_max = tl.max(attn_scores, axis=1)
