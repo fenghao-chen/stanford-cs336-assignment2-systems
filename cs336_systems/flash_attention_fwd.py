@@ -15,6 +15,7 @@ def flash_fwd_kernel(
         D: tl.constexpr,
         Q_TILE_SIZE: tl.constexpr,
         K_TILE_SIZE: tl.constexpr,
+        is_causal: tl.constexpr,
 ):
     # Program indices
     query_tile_index = tl.program_id(0)
@@ -72,12 +73,23 @@ def flash_fwd_kernel(
     l = tl.zeros((Q_TILE_SIZE,), dtype=tl.float32)
     o = tl.zeros((Q_TILE_SIZE, D), dtype=tl.float32)
 
+    mask = tl.arange(0, N_QUERIES)[:, None] >= tl.arange(0, N_KEYS)[None, :]
+    zero_attn_scores = tl.full((N_QUERIES, N_KEYS), -1e6, dtype=tl.float32)
+
     num_k_tiles = tl.cdiv(N_KEYS, K_TILE_SIZE)
     for j in range(num_k_tiles):
         k_j = tl.load(K_block_ptr, boundary_check=(0, 1), padding_option="zero")  # (tile_size, d_model)
         v_j = tl.load(V_block_ptr, boundary_check=(0, 1), padding_option="zero")  # (tile_size, d_model)
 
-        attn_scores = tl.dot(q_i, tl.trans(k_j)) * scale
+        attn_scores = tl.dot(q_i, tl.trans(k_j)) * scale # (tile_size, tile_size)
+        if is_causal:
+            q_start = query_tile_index * Q_TILE_SIZE
+            q_end = min(q_start + Q_TILE_SIZE, N_QUERIES)
+            k_start = j * K_TILE_SIZE
+            k_end = min(k_start + K_TILE_SIZE, N_KEYS)
+            mask_new = mask[q_start: q_end, k_start: k_end]
+            attn_scores = tl.where(mask_new, attn_scores, zero_attn_scores)
+
         row_max = tl.max(attn_scores, axis=1)
         m_new = tl.maximum(m, row_max)
 

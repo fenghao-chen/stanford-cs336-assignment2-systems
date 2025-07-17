@@ -29,10 +29,10 @@ class FlashAttention(torch.autograd.Function):
             o_full.stride(0), o_full.stride(1), o_full.stride(2),
             l_full.stride(0), l_full.stride(1),
             seq_len, seq_len, scale,
-            d_model, Q_TILE_SIZE, K_TILE_SIZE
+            d_model, Q_TILE_SIZE, K_TILE_SIZE, is_causal
         )
 
-        ctx.save_for_backward(l_full)
+        ctx.save_for_backward(l_full, is_causal)
         return o_full
 
     @staticmethod
