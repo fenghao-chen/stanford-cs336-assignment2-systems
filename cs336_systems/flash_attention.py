@@ -40,6 +40,7 @@ class FlashAttention(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_out):
         Q, K, V, O, L = ctx.saved_tensors
+        is_causal = ctx.is_causal
         flash_backward_compiled = torch.compile(flash_backward)
-        dQ, dK, dV = flash_backward_compiled(Q=Q, K=K, V=V, O=O, dO=grad_out, L=L)
+        dQ, dK, dV = flash_backward_compiled(Q=Q, K=K, V=V, O=O, dO=grad_out, L=L, is_causal=is_causal)
         return dQ, dK, dV, None  # None for is_causal gradient because it's not differentiable
