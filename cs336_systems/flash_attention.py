@@ -2,6 +2,7 @@ import torch
 from einops import rearrange, einsum
 import math
 from cs336_systems.flash_attention_fwd import flash_fwd_kernel
+from cs336_systems.flash_attention_backward import flash_backward
 
 class FlashAttention(torch.autograd.Function):
     @staticmethod
@@ -38,4 +39,7 @@ class FlashAttention(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_out):
-        raise NotImplementedError
+        Q, K, V, O, L = ctx.saved_tensors
+        flash_backward_compiled = torch.compile(flash_backward)
+        dQ, dK, dV = flash_backward_compiled(Q=Q, K=K, V=V, O=O, dO=grad_out, L=L)
+        return dQ, dK, dV, None  # None for is_causal gradient because it's not differentiable
