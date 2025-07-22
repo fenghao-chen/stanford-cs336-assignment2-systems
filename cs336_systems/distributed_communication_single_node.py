@@ -6,7 +6,6 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 
 is_gpu = torch.cuda.is_available()
-device = "cuda" if is_gpu else "cpu"
 
 def setup(rank, world_size):
     os.environ["MASTER_ADDR"] = "localhost"
@@ -17,15 +16,25 @@ def setup(rank, world_size):
     else:
         dist.init_process_group("gloo", rank=rank, world_size=world_size)
 
+
 def distributed_demo(rank, world_size, tensor_size):
     setup(rank, world_size)
-    data = torch.randn(int(tensor_size)).to(device)
+    if is_gpu:
+        data = torch.randn(int(tensor_size)).to(f"cuda:{rank}")
+    else:
+        data = torch.randn(int(tensor_size)).to('cpu')
     dist.all_reduce(data, async_op=False)
 
-if __name__ == "__main__":
+    # Clean up the process group
+    dist.destroy_process_group()
+
+def run_benchmark():
     world_size_list = [2, 4, 6]
     mb_over_float32 = (2 ** 20) / 4
     tensor_size_list = [mb_over_float32, 10 * mb_over_float32, 100 * mb_over_float32, 1000 * mb_over_float32]
+
+    # Set multiprocessing start method
+    mp.set_start_method('spawn', force=True)
 
     # warm up
     for _ in range(5):
@@ -38,4 +47,8 @@ if __name__ == "__main__":
             if is_gpu:
                 torch.cuda.synchronize()
             end = time.time()
-            print(f"{tensor_size/mb_over_float32} MB, {world_size=} {end - start:2f} seconds")
+            print(f"{tensor_size / mb_over_float32} MB, {world_size=}, {end - start:.2f} seconds")
+
+
+if __name__ == "__main__":
+    run_benchmark()
