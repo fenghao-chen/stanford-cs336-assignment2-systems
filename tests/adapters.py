@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Type
 
 import torch
+
+from cs336_systems.ddp_overlap_individual_parameters import DDPOverlapIndividualParameters
 from cs336_systems.flash_attention_pytorch import FlashAttentionPyTorch
 from cs336_systems.naive_ddp import DDPIndividualParameters
 
@@ -54,7 +56,7 @@ def get_ddp_individual_parameters(module: torch.nn.Module) -> torch.nn.Module:
         Instance of a DDP class.
     """
     # For example: return DDPIndividualParameters(module)
-    return DDPIndividualParameters(module)
+    return DDPOverlapIndividualParameters(module)
 
 
 def ddp_individual_parameters_on_after_backward(ddp_model: torch.nn.Module, optimizer: torch.optim.Optimizer):

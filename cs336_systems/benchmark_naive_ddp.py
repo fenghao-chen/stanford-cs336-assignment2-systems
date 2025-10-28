@@ -10,6 +10,7 @@ from copy import deepcopy
 
 from cs336_basics.model import BasicsTransformerLM
 
+from cs336_systems.ddp_overlap_individual_parameters import DDPOverlapIndividualParameters
 from cs336_systems.naive_ddp import DDPIndividualParameters
 
 from tests.common import (
@@ -42,7 +43,8 @@ num_heads = 25
 d_ff = 6400
 context_length = 256
 
-use_ddp_flatten = True
+use_ddp_flatten = False
+use_ddp_overlap = True
 
 def _naive_DistributedDataParallelIndividualParameters(rank: int, world_size: int, base_model: torch.nn.Module, all_x: torch.Tensor, all_y: torch.Tensor):
     device_str = _setup_process_group(rank=rank, world_size=world_size, backend=get_backend())
@@ -65,7 +67,7 @@ def _naive_DistributedDataParallelIndividualParameters(rank: int, world_size: in
     # Create a DDP model. Note that the weights of this model should
     # match the non-parallel baseline above.
     ddp_base = deepcopy(non_parallel_model)
-    ddp_model = DDPIndividualParameters(ddp_base)
+    ddp_model =DDPOverlapIndividualParameters(ddp_base) if use_ddp_overlap else DDPIndividualParameters(ddp_base)
 
     # Make sure all the ranks have the same model state
     validate_ddp_net_equivalence(ddp_model)
@@ -81,7 +83,7 @@ def _naive_DistributedDataParallelIndividualParameters(rank: int, world_size: in
 
     total_training_time = 0.
     total_comm_time = 0.
-    for i in range(50):
+    for i in range(5):
         training_start = time.time()
         ddp_optimizer.zero_grad()
 
