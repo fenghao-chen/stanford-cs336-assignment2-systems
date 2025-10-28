@@ -42,6 +42,8 @@ num_heads = 25
 d_ff = 6400
 context_length = 256
 
+use_ddp_flatten = True
+
 def _naive_DistributedDataParallelIndividualParameters(rank: int, world_size: int, base_model: torch.nn.Module, all_x: torch.Tensor, all_y: torch.Tensor):
     device_str = _setup_process_group(rank=rank, world_size=world_size, backend=get_backend())
     device = torch.device(device_str)
@@ -97,7 +99,10 @@ def _naive_DistributedDataParallelIndividualParameters(rank: int, world_size: in
         # Run student-written code that needs to execute after the backward pass,
         # but before the optimizer step (e.g., to wait for all DDP ranks to sync gradients)
         comm_start = time.time()
-        ddp_model.finish_gradient_synchronization()
+        if use_ddp_flatten:
+            ddp_model.finish_gradient_synchronization_flatten()
+        else:
+            ddp_model.finish_gradient_synchronization()
         comm_end = time.time()
 
         ddp_optimizer.step()
