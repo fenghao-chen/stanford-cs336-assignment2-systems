@@ -43,17 +43,22 @@ d_ff = 6400
 context_length = 256
 
 def _naive_DistributedDataParallelIndividualParameters(rank: int, world_size: int, base_model: torch.nn.Module, all_x: torch.Tensor, all_y: torch.Tensor):
-    device = _setup_process_group(rank=rank, world_size=world_size, backend=get_backend())
+    device_str = _setup_process_group(rank=rank, world_size=world_size, backend=get_backend())
+    device = torch.device(device_str)
     # Execute barrier prior to running test to ensure that every process
     # has finished initialization and that the following test
     # immediately exiting due to a skip doesn't cause flakiness.
-    dist.barrier()
+    if torch.cuda.is_available():
+        # Ensure each rank only participates with its local device to avoid NCCL duplicate GPU errors.
+        dist.barrier(device_ids=[torch.cuda.current_device()])
+    else:
+        dist.barrier()
 
     # Seed to ensure that ranks are initialized with different initial models.
     torch.manual_seed(rank)
 
     # This is our non-parallel baseline.
-    non_parallel_model = base_model
+    non_parallel_model = deepcopy(base_model).to(device)
 
     # Create a DDP model. Note that the weights of this model should
     # match the non-parallel baseline above.
@@ -74,7 +79,7 @@ def _naive_DistributedDataParallelIndividualParameters(rank: int, world_size: in
 
     total_training_time = 0.
     total_comm_time = 0.
-    for i in range(5):
+    for i in range(50):
         training_start = time.time()
         ddp_optimizer.zero_grad()
 
@@ -113,9 +118,9 @@ def _naive_DistributedDataParallelIndividualParameters(rank: int, world_size: in
 
 if __name__ == '__main__':
     torch.random.manual_seed(42)
-    model_class = BasicsTransformerLM(vocab_size=vocab_size, context_length=context_length, d_model=d_model, num_layers=num_layers, num_heads=num_heads, d_ff=d_ff, rope_theta=rope_theta).to(get_device())
-    all_x = torch.randint(0, vocab_size, (batch_size, context_length)).to(get_device())
-    all_y = torch.randn(batch_size, context_length, vocab_size).to(get_device())
+    model_class = BasicsTransformerLM(vocab_size=vocab_size, context_length=context_length, d_model=d_model, num_layers=num_layers, num_heads=num_heads, d_ff=d_ff, rope_theta=rope_theta)
+    all_x = torch.randint(0, vocab_size, (batch_size, context_length))
+    all_y = torch.randn(batch_size, context_length, vocab_size)
     mp.spawn(
         _naive_DistributedDataParallelIndividualParameters,
         args=(world_size, model_class, all_x, all_y),
