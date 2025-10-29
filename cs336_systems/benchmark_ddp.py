@@ -48,9 +48,7 @@ use_ddp_flatten = False
 use_ddp_overlap = True
 use_ddp_bucketed = True
 
-bucket_size = 1
-
-def _naive_DistributedDataParallelIndividualParameters(rank: int, world_size: int, base_model: torch.nn.Module, all_x: torch.Tensor, all_y: torch.Tensor):
+def _naive_DistributedDataParallelIndividualParameters(rank: int, world_size: int, base_model: torch.nn.Module, all_x: torch.Tensor, all_y: torch.Tensor, bucket_size: int | None = None):
     device_str = _setup_process_group(rank=rank, world_size=world_size, backend=get_backend())
     device = torch.device(device_str)
     # Execute barrier prior to running test to ensure that every process
@@ -93,7 +91,7 @@ def _naive_DistributedDataParallelIndividualParameters(rank: int, world_size: in
 
     total_training_time = 0.
     total_comm_time = 0.
-    for i in range(50):
+    for i in range(5):
         training_start = time.time()
         ddp_optimizer.zero_grad()
 
@@ -143,11 +141,10 @@ if __name__ == '__main__':
     all_y = torch.randn(batch_size, context_length, vocab_size)
 
     if use_ddp_bucketed:
-        for size in [1, 10, 100, 1000]:
-            bucket_size = size
+        for bucket_size in [1, 10, 100, 1000]:
             mp.spawn(
                 _naive_DistributedDataParallelIndividualParameters,
-                args=(world_size, model_class, all_x, all_y),
+                args=(world_size, model_class, all_x, all_y, bucket_size),
                 nprocs=world_size,
                 join=True,
             )
