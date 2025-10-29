@@ -10,6 +10,7 @@ from copy import deepcopy
 
 from cs336_basics.model import BasicsTransformerLM
 
+from cs336_systems.ddp_overlap_bucketed import DDPOverlapBucketed
 from cs336_systems.ddp_overlap_individual_parameters import DDPOverlapIndividualParameters
 from cs336_systems.naive_ddp import DDPIndividualParameters
 
@@ -45,6 +46,9 @@ context_length = 256
 
 use_ddp_flatten = False
 use_ddp_overlap = True
+use_ddp_bucketed = True
+
+bucket_size = 1
 
 def _naive_DistributedDataParallelIndividualParameters(rank: int, world_size: int, base_model: torch.nn.Module, all_x: torch.Tensor, all_y: torch.Tensor):
     device_str = _setup_process_group(rank=rank, world_size=world_size, backend=get_backend())
@@ -67,7 +71,13 @@ def _naive_DistributedDataParallelIndividualParameters(rank: int, world_size: in
     # Create a DDP model. Note that the weights of this model should
     # match the non-parallel baseline above.
     ddp_base = deepcopy(non_parallel_model)
-    ddp_model =DDPOverlapIndividualParameters(ddp_base) if use_ddp_overlap else DDPIndividualParameters(ddp_base)
+
+    if use_ddp_bucketed:
+        ddp_model = DDPOverlapBucketed(ddp_base, bucket_size)
+    elif use_ddp_overlap:
+        ddp_model = DDPOverlapIndividualParameters(ddp_base)
+    else:
+        ddp_model = DDPIndividualParameters(ddp_base)
 
     # Make sure all the ranks have the same model state
     validate_ddp_net_equivalence(ddp_model)
@@ -83,7 +93,7 @@ def _naive_DistributedDataParallelIndividualParameters(rank: int, world_size: in
 
     total_training_time = 0.
     total_comm_time = 0.
-    for i in range(5):
+    for i in range(50):
         training_start = time.time()
         ddp_optimizer.zero_grad()
 
@@ -120,6 +130,9 @@ def _naive_DistributedDataParallelIndividualParameters(rank: int, world_size: in
         total_training_time += training_end - training_start
         total_comm_time += comm_end - comm_start
 
+    if use_ddp_bucketed:
+        print(f"{bucket_size=}")
+
     print(f"{total_training_time=}, {total_comm_time=}, percentage={total_comm_time/total_training_time}")
     _cleanup_process_group()
 
@@ -128,9 +141,20 @@ if __name__ == '__main__':
     model_class = BasicsTransformerLM(vocab_size=vocab_size, context_length=context_length, d_model=d_model, num_layers=num_layers, num_heads=num_heads, d_ff=d_ff, rope_theta=rope_theta)
     all_x = torch.randint(0, vocab_size, (batch_size, context_length))
     all_y = torch.randn(batch_size, context_length, vocab_size)
-    mp.spawn(
-        _naive_DistributedDataParallelIndividualParameters,
-        args=(world_size, model_class, all_x, all_y),
-        nprocs=world_size,
-        join=True,
-    )
+
+    if use_ddp_bucketed:
+        for size in [1, 10, 100, 1000]:
+            bucket_size = size
+            mp.spawn(
+                _naive_DistributedDataParallelIndividualParameters,
+                args=(world_size, model_class, all_x, all_y),
+                nprocs=world_size,
+                join=True,
+            )
+    else:
+        mp.spawn(
+            _naive_DistributedDataParallelIndividualParameters,
+            args=(world_size, model_class, all_x, all_y),
+            nprocs=world_size,
+            join=True,
+        )
